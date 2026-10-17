@@ -7,6 +7,7 @@ import { Hono, type Context } from "hono"
 import { getToken, removeToken, getAdminKey, setAdminKey, validateAdminKey } from "./auth"
 import { startBrowserAuth, startDeviceAuth, startHeadlessPKCE, submitCallbackUrl } from "./oauth"
 import { proxyHandler, sendToCodex, type CodexOptions } from "./proxy"
+import { collectStream, relayUpstreamStream } from "./stream"
 import {
   createSession,
   getSession,
@@ -345,9 +346,13 @@ export function createApp(opts: AppOptions) {
       { role: "system", content: instructions },
       { role: "user", content: body.content },
     ]
+    const upstreamAbort = new AbortController()
+    const abortFromClient = () => upstreamAbort.abort(c.req.raw.signal.reason)
+    if (c.req.raw.signal.aborted) abortFromClient()
+    else c.req.raw.signal.addEventListener("abort", abortFromClient, { once: true })
 
     try {
-      const upstream = await sendToCodex(messages, model, true, undefined, codexOpts)
+      const upstream = await sendToCodex(messages, model, true, undefined, codexOpts, upstreamAbort.signal)
 
       if (!upstream.ok) {
         const err = await upstream.text()
@@ -355,7 +360,8 @@ export function createApp(opts: AppOptions) {
       }
 
       if (clientWantsStream) {
-        return new Response(upstream.body, {
+        if (!upstream.body) return c.json({ error: "Codex API returned no stream" }, 502)
+        return new Response(relayUpstreamStream(upstream.body, upstreamAbort), {
           headers: {
             "content-type": "text/event-stream",
             "cache-control": "no-cache",
@@ -365,8 +371,10 @@ export function createApp(opts: AppOptions) {
       }
 
       const assistantContent = await collectStream(upstream.body!)
+      c.req.raw.signal.removeEventListener("abort", abortFromClient)
       return c.json({ message: assistantContent })
     } catch (err: any) {
+      c.req.raw.signal.removeEventListener("abort", abortFromClient)
       return c.json({ error: err.message }, 500)
     }
   })
@@ -444,42 +452,6 @@ function extractAssistantContent(data: any): string | null {
     if (textParts.length > 0) return textParts.join("")
   }
   return null
-}
-
-async function collectStream(stream: ReadableStream<Uint8Array>): Promise<string | null> {
-  const reader = stream.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ""
-  let collected = ""
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-
-      const lines = buffer.split("\n")
-      buffer = lines.pop() ?? ""
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue
-        const payload = line.slice(6).trim()
-        if (payload === "[DONE]") continue
-        try {
-          const chunk = JSON.parse(payload)
-          const delta = chunk?.choices?.[0]?.delta?.content
-          if (delta) collected += delta
-          if (chunk?.type === "response.output_text.delta" && chunk?.delta) {
-            collected += chunk.delta
-          }
-        } catch {}
-      }
-    }
-  } catch {} finally {
-    reader.releaseLock()
-  }
-
-  return collected || null
 }
 
 const CODEX_OPTION_KEYS = [

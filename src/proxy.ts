@@ -40,7 +40,7 @@ export interface CodexOptions {
   tool_choice?: "auto" | "none" | "required" | string
   tools?: Array<Record<string, unknown>>
   parallel_tool_calls?: boolean
-  reasoning?: { effort?: "low" | "medium" | "high"; summary?: "auto" | "concise" | "detailed" | "disabled" }
+  reasoning?: { effort?: "none" | "low" | "medium" | "high"; summary?: "auto" | "concise" | "detailed" | "disabled" }
   metadata?: Record<string, string>
 }
 
@@ -53,6 +53,7 @@ export async function sendToCodex(
   stream: boolean = false,
   sessionId?: string,
   options?: CodexOptions,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const token = await ensureValidToken()
   const headers = buildCodexHeaders(token, sessionId)
@@ -81,6 +82,7 @@ export async function sendToCodex(
       store: false,
       ...options,
     }),
+    signal,
   })
 }
 
