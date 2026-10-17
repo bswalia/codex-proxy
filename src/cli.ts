@@ -277,7 +277,7 @@ async function daemonize(args: ParsedArgs): Promise<void> {
 
   await mkdir(DATA_DIR, { recursive: true })
 
-  const child = spawn(IS_COMPILED ? childArgs : childArgs.slice(1), {
+  const child = spawn(childArgs, {
     env: process.env,
     stdin: "ignore",
     stdout: Bun.file(LOG_FILE),

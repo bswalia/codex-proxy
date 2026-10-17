@@ -33,6 +33,9 @@ async function writeJsonAtomic(path: string, data: unknown): Promise<void> {
 // ─── Admin Key ───
 
 export async function getAdminKey(): Promise<string | null> {
+  const envKey = process.env.CODEX_PROXY_ADMIN_KEY?.trim()
+  if (envKey) return envKey
+
   try {
     const key = (await readFile(ADMIN_KEY_FILE, "utf-8")).trim()
     return key || null
