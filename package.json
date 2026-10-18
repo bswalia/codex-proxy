@@ -17,7 +17,7 @@
     "build": "bun build src/cli.ts --compile --outfile codex-proxy"
   },
   "dependencies": {
-    "hono": "^4.7.0"
+    "hono": "^4.13.13"
   },
   "devDependencies": {
     "@types/bun": "latest",
